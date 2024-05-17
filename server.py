@@ -96,12 +96,14 @@ class Server:
             raise ValueError("More locks than 0")
 
         path = uri.split("://")
-        if uri.startswith("unix"):
-            self._address = DEFAULT_UNIX_SOCK_ADDRESS if (len(path) == 1 or path[1] == "") else uri
-        elif uri.startswith("tcp"):
+        if path[0] == "unix":
+            self._address = DEFAULT_UNIX_SOCK_ADDRESS if (len(path) == 1 or path[1] == "") else path[1]
+        elif path[0] == "tcp":
             self._address = path[1]
             if ":" not in self._address:
                 raise ValueError("invalid address, should be ip_to_bind:port; ex: 0.0.0.0:1337")
+        else:
+            raise ValueError("unknown protocol")
 
         self.num_locks = num_locks
         self._socket_type: SocketType = path[0]  # type:ignore
@@ -115,7 +117,6 @@ class Server:
             else:
                 if str(filepath.parent) != ".":
                     os.makedirs(filepath.parent, exist_ok=True)
-
             try:
                 server = await asyncio.start_unix_server(self.__handler, path=filepath)
                 async with server:

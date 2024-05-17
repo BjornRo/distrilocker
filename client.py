@@ -1,7 +1,7 @@
 from __future__ import annotations
 from abc import ABC, abstractmethod
 import asyncio
-import time
+
 from typing import Literal
 from pathlib import Path
 import os
@@ -11,14 +11,15 @@ DEFAULT_UNIX_SOCK_ADDRESS = "/dev/shm/dlserver.sock"
 
 
 async def main():
+    import time
     import sys
 
     protocol, *addr_path = sys.argv[1].lower().split("://")
     store_id = int(sys.argv[2])
 
-    if protocol.startswith("unix"):
+    if protocol == "unix":
         client = ClientUnix(store_id, addr_path[0] if addr_path else "")
-    elif protocol.startswith("tcp"):
+    elif protocol == "tcp":
         client = ClientTCP(store_id, addr_port=addr_path[0])
     else:
         raise ValueError("Invalid protocol")
