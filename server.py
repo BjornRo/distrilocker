@@ -31,9 +31,10 @@ async def main():
 
 
 class _LockStore:
-    def __init__(self):
+    def __init__(self, periodic_cleaning_interval_sec: int):
         self.store: dict[str, Expiry] = {}
         self.lock = asyncio.Lock()
+        self.interval = periodic_cleaning_interval_sec
 
     async def init(self):
         async def periodic_clean(interval_time: int):
@@ -45,7 +46,7 @@ class _LockStore:
                             if now_time() > expiry:
                                 del self.store[key]
 
-        self._background_task = asyncio.create_task(periodic_clean(14400))
+        self._background_task = asyncio.create_task(periodic_clean(self.interval))
 
     async def get_expiry(self, key: str) -> Literal[0] | int:
         """Return 0 means no key found"""
@@ -89,7 +90,7 @@ class _LockStore:
 
 
 class Server:
-    def __init__(self, num_locks: int, uri: str):
+    def __init__(self, num_locks: int, uri: str, periodic_cleaning_interval_sec: int = 14400):
         """address: 0.0.0.0:2155 or unix(default)/unix:///path/to/me for unix"""
         if num_locks <= 0:
             raise ValueError("More locks than 0")
@@ -104,7 +105,7 @@ class Server:
 
         self.num_locks = num_locks
         self._socket_type: SocketType = path[0]  # type:ignore
-        self._store = tuple(_LockStore() for _ in range(num_locks))
+        self._store = tuple(_LockStore(periodic_cleaning_interval_sec) for _ in range(num_locks))
 
     async def run(self):
         if self._socket_type == "unix":
