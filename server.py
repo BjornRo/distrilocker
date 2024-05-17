@@ -7,8 +7,6 @@ import os
 import random
 import sys
 
-
-type SocketType = Literal["unix", "tcp"]
 type Expiry = int
 
 now_time = lambda: int(time.time())
