@@ -24,14 +24,20 @@ async def main():
     else:
         raise ValueError("Invalid protocol")
 
+    print(await client.size())
     start = time.time()
     print(await client.set_expiry("boDo", 1719955015))
+    print(await client.set_expiry("boDod", 1719955015))
     print("Elapsed:", time.time() - start)
+    print(await client.size())
 
 
 class BaseClient(ABC):
     @abstractmethod
     async def _call(self, *args, **kwargs): ...
+
+    async def size(self):
+        return await self._call("", method=b"size")
 
     async def get_expiry(self, key: str):
         return await self._call(key, method=b"get")
@@ -54,7 +60,7 @@ class ClientUnix(BaseClient):
             raise RuntimeError("DL server is not running")
         self.store_id = str(store_id).encode()
 
-    async def _call(self, key: str, method: Literal[b"get", b"set", b"update", b"delete"]) -> int:
+    async def _call(self, key: str, method: Literal[b"size", b"get", b"set", b"update", b"delete"]) -> int:
         reader, writer = await asyncio.open_unix_connection(self.filepath)
         writer.write(self.store_id + b"/" + method + b"/" + key.encode() + b"\n")
         await writer.drain()
