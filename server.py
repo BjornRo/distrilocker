@@ -6,30 +6,30 @@ from pathlib import Path
 import os
 import random
 import sys
-import uvloop  # type:ignore
+
 
 type SocketType = Literal["unix", "tcp"]
 type Expiry = int
 
 now_time = lambda: int(time.time())
 
-UNIX_SOCK_ADDRESS = "/dev/shm/dlserver/sock"
+DEFAULT_UNIX_SOCK_ADDRESS = "/dev/shm/dlserver.sock"
 
 
 async def main():
+    try:
+        import uvloop  # type:ignore
+
+        asyncio.set_event_loop(uvloop.new_event_loop())
+    except:
+        pass
+
+    """Examples:
+    tcp://0.0.0.0:8888, unix://not/home/but/here"""
     setting = sys.argv[1].lower()
     num_stores = int(sys.argv[2]) if len(sys.argv) == 3 else 4
 
-    if setting == "unix":
-        sock_type = "unix"
-        addr_path = None
-    else:
-        sock_type, addr_path = setting.split("://", 1)
-        if sock_type != "tcp":
-            raise ValueError("unknown socket type")
-
-    asyncio.set_event_loop(uvloop.new_event_loop())
-    await Server(num_stores, sock_type, addr_path).run()
+    await Server(num_stores, setting).run()
 
 
 class _LockStore:
@@ -91,26 +91,31 @@ class _LockStore:
 
 
 class Server:
-    def __init__(self, num_locks: int, socket_type: SocketType, address: str | None):
-        """address: 0.0.0.0:2155 or None for unix"""
-        if socket_type == "tcp":
-            if not address or address and ":" not in address:
-                raise ValueError("invalid address, should be ip_to_bind:port; ex: 0.0.0.0:1337")
+    def __init__(self, num_locks: int, uri: str):
+        """address: 0.0.0.0:2155 or unix(default)/unix:///path/to/me for unix"""
         if num_locks <= 0:
             raise ValueError("More locks than 0")
 
+        path = uri.split("://")
+        if uri.startswith("unix"):
+            self._address = DEFAULT_UNIX_SOCK_ADDRESS if (len(path) == 1 or path[1] == "") else uri
+        elif uri.startswith("tcp"):
+            self._address = path[1]
+            if ":" not in self._address:
+                raise ValueError("invalid address, should be ip_to_bind:port; ex: 0.0.0.0:1337")
+
         self.num_locks = num_locks
-        self._address = address
-        self._socket_type: SocketType = socket_type
+        self._socket_type: SocketType = path[0]  # type:ignore
         self._store = tuple(_LockStore() for _ in range(num_locks))
 
     async def run(self):
         if self._socket_type == "unix":
-            filepath = Path(UNIX_SOCK_ADDRESS)
+            filepath = Path(self._address)
             if os.path.exists(filepath):
                 os.remove(filepath)
-                os.rmdir(filepath.parent)
-            os.makedirs(filepath.parent, exist_ok=True)
+            else:
+                if str(filepath.parent) != ".":
+                    os.makedirs(filepath.parent, exist_ok=True)
 
             try:
                 server = await asyncio.start_unix_server(self.__handler, path=filepath)
@@ -120,7 +125,7 @@ class Server:
                     await server.serve_forever()
             except:
                 try:
-                    os.rmdir(filepath)
+                    os.remove(filepath)
                 except:
                     pass
         else:
