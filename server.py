@@ -48,6 +48,9 @@ class _LockStore:
 
         self._background_task = asyncio.create_task(periodic_clean(self.interval))
 
+    def size(self) -> int:
+        return len(self.store)
+
     async def get_expiry(self, key: str) -> Literal[0] | int:
         """Return 0 means no key found"""
         key = key.lower()
@@ -144,6 +147,9 @@ class Server:
             store = self._store[int(index)]
             key = args[0]
             match method:
+                case "size":
+                    size = str(store.size()).encode()
+                    response = len(size).to_bytes(2) + size
                 case "get":
                     expiry = str(await store.get_expiry(key)).encode()
                     response = len(expiry).to_bytes(2) + expiry
