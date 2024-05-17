@@ -1,0 +1,81 @@
+# Don't track content of these folders
+.idea
+.vscode
+out/
+trash/
+duckdns/
+__pycache__/
+node_modules/
+certbot/
+target/
+app.db
+.github
+
+# Secret sauce #
+################
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+config.json
+cfg.json
+config.ini
+cfg.ini
+data.json
+dat.json
+data.p
+cfg.h
+dat.p
+private_encode.py
+
+# Compiled source #
+###################
+*.com
+*.class
+*.dll
+*.exe
+*.o
+*.so
+
+# IDE Specific files #
+######################
+#IntelliJ IDEA
+*.iml
+*.xml
+
+#VSCode
+*.code-workspace
+
+# Packages #
+############
+# it's better to unpack these files and commit the raw source
+# git has its own built in compression methods
+*.7z
+*.dmg
+*.gz
+*.iso
+*.jar
+*.rar
+*.tar
+*.zip
+
+# Miscellaneous #
+#################
+*.log
+*.txt
+*.dat
+*.conf
+*.lock
+# *.json
+
+
+# Ignore the ignore
+mosquitto.conf
+!requirements.txt
+!librejson.so
+!package.json
+!tsconfig.json
+!package-lock.json
