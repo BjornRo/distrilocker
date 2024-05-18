@@ -108,7 +108,6 @@ class Server:
         else:
             raise ValueError("unknown protocol")
 
-        self.num_locks = num_locks
         self._socket_type: SocketType = path[0]  # type:ignore
         self._store = tuple(_LockStore(periodic_cleaning_interval_sec) for _ in range(num_locks))
 
