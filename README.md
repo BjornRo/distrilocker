@@ -13,6 +13,8 @@ To request from the client. The client send: STORE_ID||METHOD||ARGS..||\n
 The client then receives the result in the format of HEADER(2 bytes binary big-endian)||INTEGER
 The header is to know how many integers needs to be read and also extension.
 
-
 The server handles all requests using a dict and each store has their own dict and lock. The server multiplexes
-using the STORE_ID given by the client. Each store also have a cleaning task that selects some random keys and checks the expiry, if it is expired, delete.
+using the STORE_ID given by the client. 
+
+Using periodic: Each store also have a cleaning task that selects some random keys and checks the expiry, if it is expired, delete.
+Otherwise, task deletes itself. I dont know which version is the best...
