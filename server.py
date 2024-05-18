@@ -162,9 +162,9 @@ class Server:
                     response = b"\x00\x0510101"
             writer.write(response)
             await writer.drain()
-            writer.write_eof()
         except:
             pass
+        writer.write_eof()
         writer.close()
         await writer.wait_closed()
 

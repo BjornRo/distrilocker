@@ -74,7 +74,7 @@ class ClientTCP(BaseClient):
         self.addr, self.port = addr_port.split(":")
         self.store_id = str(store_id).encode()
 
-    async def _call(self, key: str, method: Literal[b"get", b"set", b"update", b"delete"]) -> int:
+    async def _call(self, key: str, method: Literal[b"size", b"get", b"set", b"update", b"delete"]) -> int:
         reader, writer = await asyncio.open_connection(host=self.addr, port=self.port)
         writer.write(self.store_id + b"/" + method + b"/" + key.encode() + b"\n")
         await writer.drain()
