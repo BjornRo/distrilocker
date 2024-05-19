@@ -1,9 +1,12 @@
 from enum import IntEnum
+from struct import Struct
 import msgspec
 
 type ReturnResult = tuple[bool, bytes]
 
 DEFAULT_UNIX_SOCK_ADDRESS = "/dev/shm/dlserver.sock"
+
+response_protocol = Struct(">Q?H")  # Q: int_id, ?: Ok/Err, H: Header_len for data following
 
 
 class RequestMethods(IntEnum):

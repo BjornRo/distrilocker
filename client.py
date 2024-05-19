@@ -1,11 +1,10 @@
 from __future__ import annotations
 from abc import ABC, abstractmethod
 import asyncio
-from struct import Struct
 from pathlib import Path
 import os
 
-from shared import Request, RequestMethods, ReturnResult, DEFAULT_UNIX_SOCK_ADDRESS
+from shared import Request, RequestMethods, ReturnResult, DEFAULT_UNIX_SOCK_ADDRESS, response_protocol
 import msgspec
 
 
@@ -62,15 +61,58 @@ class ClientBase(ABC):
         return await self._call(request=req)
 
 
-class ClientUnixTCPBase(ClientBase):
-    response_protocol = Struct(">?H")  # ?: Ok/Err, H: Header_len for data following
+from dataclasses import dataclass, field
 
+
+@dataclass
+class CallbackItem:
+    request: Request
+    data: bytes | None
+    channel: asyncio.Queue[ReturnResult] = field(default_factory=lambda: asyncio.Queue(1))
+
+
+class ClientUnixTCPBase(ClientBase):
     def __init__(self, store_id: int):
         super().__init__(store_id)
+        self.callback_queue: asyncio.Queue[CallbackItem] = asyncio.Queue()
+        self.waiting_callback: dict[int, asyncio.Queue[ReturnResult]] = {}
+
+    async def init(self):
+        self.reader, self.writer = await self._connect()
+        self.background_task = asyncio.create_task(self.connection_multiplexer())
+
+    async def connection_multiplexer(self):
+        async def reader():
+            while True:
+                uid: int
+                ok: bool
+                header_len: int
+                uid, ok, header_len = response_protocol.unpack(await self.reader.readexactly(11))
+                data = await reader.readexactly(header_len) if header_len else b""
+                await self.waiting_callback[uid].put((ok, data))
+                del self.waiting_callback[uid]
+        reader_task = asyncio.create_task(reader())
+        while True:
+            item = await self.callback_queue.get()
+            headers = msgspec.msgpack.encode(item.request)
+            self.writer.write(id(item).to_bytes(8) + len(headers).to_bytes(1))
+            if item.data:
+                self.writer.write(item.data)
+            await self.writer.drain()
+            self.waiting_callback[id(item)] = item.channel
+
 
     @abstractmethod
     async def _connect(self) -> tuple[asyncio.StreamReader, asyncio.StreamWriter]: ...
 
+    async def caller(self, request: Request, data: bytes | None = None) -> ReturnResult:
+        cb = CallbackItem(request=request, data=data)
+        await self.callback_queue.put(cb)
+        return await cb.channel.get()
+
+    async def _call(self, request: Request, data: bytes | None = None) -> ReturnResult:
+        
+    
     async def _call(self, request: Request, data: bytes | None = None) -> ReturnResult:
         reader, writer = await self._connect()
         headers = msgspec.msgpack.encode(request)

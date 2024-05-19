@@ -5,7 +5,7 @@ from pathlib import Path
 import os
 from utils import ProtocolStrategyBase, Request, Address, StoreBase
 import stores
-from shared import DEFAULT_UNIX_SOCK_ADDRESS
+from shared import DEFAULT_UNIX_SOCK_ADDRESS, response_protocol
 
 
 async def main():
