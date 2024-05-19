@@ -88,7 +88,6 @@ class ClientUnixTCPBase(ClientBase):
     def __init__(self, store_id: int):
         super().__init__(store_id)
         self.callback_queue: asyncio.Queue[CallbackItem] = asyncio.Queue()
-        self.waiting_callback: dict[int, asyncio.Queue[ReturnResult]] = {}
 
     @override
     async def init(self):
@@ -101,6 +100,8 @@ class ClientUnixTCPBase(ClientBase):
         await self.writer.wait_closed()
 
     async def connection_multiplexer(self):
+        waiting_callback: dict[int, asyncio.Queue[ReturnResult]] = {}
+
         async def reader():
             try:
                 while True:
@@ -109,8 +110,8 @@ class ClientUnixTCPBase(ClientBase):
                     header_len: int
                     uid, ok, header_len = response_protocol.unpack(await self.reader.readexactly(11))
                     data = await self.reader.readexactly(header_len) if header_len else b""
-                    await self.waiting_callback[uid].put((ok, data))
-                    del self.waiting_callback[uid]
+                    await waiting_callback[uid].put((ok, data))
+                    del waiting_callback[uid]
             except:
                 pass
 
@@ -124,7 +125,7 @@ class ClientUnixTCPBase(ClientBase):
             if item.data:
                 self.writer.write(item.data)
             await self.writer.drain()
-            self.waiting_callback[uid] = item.channel
+            waiting_callback[uid] = item.channel
 
     @abstractmethod
     async def _connect(self) -> tuple[asyncio.StreamReader, asyncio.StreamWriter]: ...
