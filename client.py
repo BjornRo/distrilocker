@@ -1,33 +1,12 @@
 from __future__ import annotations
 from abc import ABC, abstractmethod
 import asyncio
-
-from enum import IntEnum
 from struct import Struct
 from pathlib import Path
 import os
 
+from shared import Request, RequestMethods, ReturnResult, DEFAULT_UNIX_SOCK_ADDRESS
 import msgspec
-
-type ReturnResult = tuple[bool, bytes]
-
-DEFAULT_UNIX_SOCK_ADDRESS = "/dev/shm/dlserver.sock"
-
-
-class RequestMethods(IntEnum):
-    SIZE = 0
-    GET = 1
-    SET = 2
-    DELETE = 3
-    UPDATE = 4
-
-
-class Request(msgspec.Struct, array_like=True):
-    index: int
-    method: RequestMethods
-    key: str
-    expiry: int | None
-    header_len: int | None
 
 
 async def main():

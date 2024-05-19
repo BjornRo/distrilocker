@@ -2,37 +2,17 @@ from abc import ABC, abstractmethod
 import asyncio
 from collections.abc import Callable
 from dataclasses import dataclass
-from enum import IntEnum
 from struct import Struct
+from shared import Request, RequestMethods, ReturnResult
 import time
 
 import msgspec
 
 type Address = tuple[str, int | str]
-type ReturnResult = tuple[bool, bytes]
 
 
 def now_time():
     return int(time.time())
-
-
-class RequestMethods(IntEnum):
-    SIZE = 0
-    GET = 1
-    SET = 2
-    DELETE = 3
-    UPDATE = 4
-
-
-class Request(msgspec.Struct, array_like=True):
-    index: int
-    method: RequestMethods
-    key: str
-    expiry: int | None
-    header_len: int | None
-
-    def __post_init__(self):
-        self.key = self.key.lower()
 
 
 @dataclass(slots=True)
@@ -77,7 +57,7 @@ class ProtocolStrategyBase(ABC):
         if num_stores <= 0:
             raise ValueError("More locks than 0")
         self._store: tuple[StoreBase, ...] = tuple(store_type() for _ in range(num_stores))
-    
+
     @abstractmethod
     async def run(self) -> None: ...
     async def _gen_response(self, request: Request, data: bytes | None) -> ReturnResult:

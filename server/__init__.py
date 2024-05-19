@@ -5,8 +5,7 @@ from pathlib import Path
 import os
 from utils import ProtocolStrategyBase, Request, Address, StoreBase
 import stores
-
-DEFAULT_UNIX_SOCK_ADDRESS = "/dev/shm/dlserver.sock"
+from shared import DEFAULT_UNIX_SOCK_ADDRESS
 
 
 async def main():
