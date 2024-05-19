@@ -76,6 +76,8 @@ class ClientUnixTCPBase(ClientBase):
         headers = msgspec.msgpack.encode(request)
         writer.write(len(headers).to_bytes(1))
         writer.write(headers)
+        if data:
+            writer.write(data)
         await writer.drain()
         ok: bool
         header_len: int
