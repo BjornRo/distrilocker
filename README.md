@@ -7,7 +7,7 @@ python server.py tcp://0.0.0.0:10101 7
 
 Using ascii and some binary as main transfer protocol.
 
-METHOD := get | set | update | delete
+METHOD := get | set | update | delete | size
 
 To request from the client. The client send: STORE_ID||METHOD||ARGS..||\n
 The client then receives the result in the format of HEADER(2 bytes binary big-endian)||INTEGER
