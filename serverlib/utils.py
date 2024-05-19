@@ -76,7 +76,9 @@ class ProtocolStrategyBase(ABC):
             case _:
                 return False, b"10101"
 
-    async def _handler(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
+
+class UnixTCPHandler(ProtocolStrategyBase):
+    async def handler(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
         try:
             header_len = (await reader.readexactly(1))[0]
             request = self.request_decoder.decode(await reader.readexactly(header_len))
