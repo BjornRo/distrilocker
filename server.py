@@ -36,11 +36,11 @@ async def main():
     protocol, addr_path = uri.split("://")
     match protocol:
         case "tcp":
-            server = ProtocolTCP(num_stores, addr_path, 1800)
+            server = ProtocolTCP(num_stores, addr_path)
         case "udp":
-            server = ProtocolUDP(num_stores, addr_path, 1800)
+            server = ProtocolUDP(num_stores, addr_path)
         case "unix":
-            server = ProtocolUNIX(num_stores, addr_path, 1800)
+            server = ProtocolUNIX(num_stores, addr_path)
     await server.run()
 
 
@@ -63,33 +63,21 @@ class Request(msgspec.Struct, array_like=True):
         self.key = self.key.lower()
 
 
-def _now_time():
-    return int(time.time())
-
-
 @dataclass(slots=True)
 class _StoreItem:
-    expiry: int | None
+    task: asyncio.Task | None
     data: bytes
 
 
 class _LockStore:
-    def __init__(self, periodic_cleaning_interval_sec: int):
+    def __init__(self):
         self.store: dict[str, _StoreItem] = {}
         self.lock = asyncio.Lock()
-        self.interval = periodic_cleaning_interval_sec
 
-    async def init(self):
-        async def periodic_clean(interval_time: int):
-            while True:
-                await asyncio.sleep(interval_time)
-                async with self.lock:
-                    if store_len := len(self.store):
-                        for key, item in random.sample(tuple(self.store.items()), k=min(4, store_len)):
-                            if item.expiry and _now_time() > item.expiry:
-                                del self.store[key]
-
-        self._background_task = asyncio.create_task(periodic_clean(self.interval))
+    async def _task_timer(self, key: str, expiry: int):
+        await asyncio.sleep(expiry)
+        async with self.lock:
+            del self.store[key]
 
     def size(self) -> ReturnResult:
         return True, str(len(self.store)).encode()
@@ -97,24 +85,26 @@ class _LockStore:
     async def get(self, request: Request) -> ReturnResult:
         async with self.lock:
             if request.key in self.store:
-                if (exp := self.store[request.key].expiry) is None or _now_time() <= exp:
-                    return True, self.store[request.key].data
-                del self.store[request.key]
+                return True, self.store[request.key].data
         return False, b""
 
     async def set(self, request: Request, data: bytes | None) -> ReturnResult:
-        if request.expiry != 0:
+        if (exp := request.expiry) != 0:
             async with self.lock:
-                if request.key not in self.store:
-                    exp = None if request.expiry is None else _now_time() + request.expiry
-                    self.store[request.key] = _StoreItem(expiry=exp, data=data or b"")
+                if (key := request.key) not in self.store:
+                    task = None if exp is None else asyncio.create_task(self._task_timer(key, exp))
+                    self.store[key] = _StoreItem(task=task, data=data or b"")
                     return True, b""
         return False, b""
 
     async def update(self, request: Request, data: bytes | None) -> ReturnResult:
         async with self.lock:
-            if request.key in self.store:
-                self.store[request.key].expiry = None if request.expiry is None else _now_time() + request.expiry
+            if (key := request.key) in self.store:
+                if (exp := request.expiry) != 0:
+                    if task := self.store[key].task:
+                        task.cancel()
+                    self.store[key].task = None if exp is None else asyncio.create_task(self._task_timer(key, exp))
+
                 if data is not None:
                     self.store[request.key].data = data
                 return True, b""
@@ -123,6 +113,8 @@ class _LockStore:
     async def delete(self, request: Request) -> ReturnResult:
         async with self.lock:
             if request.key in self.store:
+                if task := self.store[request.key].task:
+                    task.cancel()
                 del self.store[request.key]
                 return True, b""
         return False, b""
@@ -132,10 +124,10 @@ class ProtocolStrategyBase(ABC):
     request_decoder = msgspec.msgpack.Decoder(Request)
     response_protocol = Struct(">?H")  # ?: Ok/Err, H: Header_len for data following
 
-    def __init__(self, num_locks: int, periodic_cleaning_interval_sec: int = 14400):
+    def __init__(self, num_locks: int):
         if num_locks <= 0:
             raise ValueError("More locks than 0")
-        self._store = tuple(_LockStore(periodic_cleaning_interval_sec) for _ in range(num_locks))
+        self._store = tuple(_LockStore() for _ in range(num_locks))
 
     @abstractmethod
     async def run(self) -> None: ...
@@ -181,23 +173,21 @@ class ProtocolStrategyBase(ABC):
 
 
 class ProtocolTCP(ProtocolStrategyBase):
-    def __init__(self, num_locks: int, address_port: str, periodic_cleaning_interval_sec: int = 14400):
+    def __init__(self, num_locks: int, address_port: str):
         """Ex: address_port = '0.0.0.0:1337'"""
-        super().__init__(num_locks, periodic_cleaning_interval_sec)
+        super().__init__(num_locks)
         self.address, self.port = address_port.lower().split(":")
 
     async def run(self):
         server = await asyncio.start_server(self._handler, host=self.address, port=self.port)
         async with server:
-            for i in self._store:
-                await i.init()
             await server.serve_forever()
 
 
 class ProtocolUDP(ProtocolStrategyBase):
-    def __init__(self, num_locks: int, address_port: str, periodic_cleaning_interval_sec: int = 14400):
+    def __init__(self, num_locks: int, address_port: str):
         """Ex: address_port = '0.0.0.0:1337'"""
-        super().__init__(num_locks, periodic_cleaning_interval_sec)
+        super().__init__(num_locks)
         self.address, port = address_port.lower().split(":")
         self.port = int(port)
         self._queue: asyncio.Queue[tuple[Address, Request, bytes]] = asyncio.Queue()
@@ -239,10 +229,9 @@ class ProtocolUNIX(ProtocolStrategyBase):
         self,
         num_locks: int,
         filepath: str,
-        periodic_cleaning_interval_sec: int = 14400,
     ):
         """path/to/me or just_me"""
-        super().__init__(num_locks, periodic_cleaning_interval_sec)
+        super().__init__(num_locks)
         if not filepath:
             filepath = DEFAULT_UNIX_SOCK_ADDRESS
         elif filepath[0] == ".":
@@ -257,8 +246,6 @@ class ProtocolUNIX(ProtocolStrategyBase):
         try:
             server = await asyncio.start_unix_server(self._handler, path=self.filepath)
             async with server:
-                for i in self._store:
-                    await i.init()
                 await server.serve_forever()
         except:
             pass

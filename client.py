@@ -48,7 +48,7 @@ async def main():
 
     print(await client.size())
     start = time.time()
-    print(await client.set("boDod", 17199550145, b""))
+    print(await client.set("boDod", 10, b""))
     print("Elapsed:", time.time() - start)
     print(await client.size())
 
