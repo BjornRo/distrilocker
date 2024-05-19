@@ -3,7 +3,7 @@ import asyncio
 from collections.abc import Callable
 from pathlib import Path
 import os
-from server_utils import ProtocolStrategyBase, Request, Address, StoreBase
+from utils import ProtocolStrategyBase, Request, Address, StoreBase
 import stores
 
 DEFAULT_UNIX_SOCK_ADDRESS = "/dev/shm/dlserver.sock"
