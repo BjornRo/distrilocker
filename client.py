@@ -1,17 +1,27 @@
 from __future__ import annotations
-from abc import ABC, abstractmethod
+
 import asyncio
-from pathlib import Path
 import os
+from abc import ABC, abstractmethod
+from dataclasses import dataclass, field
+from pathlib import Path
 from typing import override
 
-from shared import Request, RequestMethods, ReturnResult, DEFAULT_UNIX_SOCK_ADDRESS, response_protocol, request_protocol
 import msgspec
+
+from shared import (
+    DEFAULT_UNIX_SOCK_ADDRESS,
+    Request,
+    RequestMethods,
+    ReturnResult,
+    request_protocol,
+    response_protocol,
+)
 
 
 async def main():
-    import time
     import sys
+    import time
 
     protocol, *addr_path = sys.argv[1].lower().split("://")
     store_id = int(sys.argv[2])
@@ -29,9 +39,10 @@ async def main():
         await client.init()
     print(await client.size())
     start = time.time()
-    print(await client.set("boDod", 10, b""))
-    print(await client.set("boDod", 10, b""))
-    print(await client.set("boDod", 10, b""))
+    await asyncio.gather(client.set("boDod", 10, b""), client.set("boDod", 10, b""), client.set("boDod", 10, b""))
+    # print(await client.set("boDod", 10, b""))
+    # print(await client.set("boDod", 10, b""))
+    # print(await client.set("boDod", 10, b""))
     print("Elapsed:", time.time() - start)
     print(await client.size())
     if protocol != "udp":
@@ -72,9 +83,6 @@ class ClientBase(ABC):
     async def delete(self, key: str):
         req = Request(index=self.store_id, method=RequestMethods.DELETE, key=key, expiry=None, header_len=None)
         return await self._call(request=req)
-
-
-from dataclasses import dataclass, field
 
 
 @dataclass
