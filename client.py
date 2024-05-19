@@ -18,8 +18,8 @@ class RequestMethods(IntEnum):
     SIZE = 0
     GET = 1
     SET = 2
-    UPDATE = 3
-    DELETE = 4
+    DELETE = 3
+    UPDATE = 4
 
 
 class Request(msgspec.Struct, array_like=True):
