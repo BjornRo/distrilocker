@@ -1,7 +1,7 @@
 import asyncio
 import random
 from typing import override
-from utils import Request, ReturnResult, StoreBase, StoreExpiryItem, StoreItem, now_time
+from .utils import Request, ReturnResult, StoreBase, StoreExpiryItem, StoreItem, now_time
 
 
 class Counter(StoreBase):

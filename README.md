@@ -15,3 +15,6 @@ using the STORE_ID given by the client.
 
 Using periodic: Each store also have a cleaning task that selects some random keys and checks the expiry, if it is expired, delete.
 Otherwise, task deletes itself. I dont know which version is the best...
+
+
+Only stable enough for localhost usage

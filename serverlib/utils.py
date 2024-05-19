@@ -2,8 +2,7 @@ from abc import ABC, abstractmethod
 import asyncio
 from collections.abc import Callable
 from dataclasses import dataclass
-from struct import Struct
-from shared import Request, RequestMethods, ReturnResult
+from shared import Request, RequestMethods, ReturnResult, response_protocol, request_protocol
 import time
 
 import msgspec
@@ -51,7 +50,6 @@ class StoreBase(ABC):
 
 class ProtocolStrategyBase(ABC):
     request_decoder = msgspec.msgpack.Decoder(Request)
-    response_protocol = Struct(">?H")  # ?: Ok/Err, H: Header_len for data following
 
     def __init__(self, num_stores: int, store_type: Callable[[], StoreBase]):
         if num_stores <= 0:
@@ -76,9 +74,18 @@ class ProtocolStrategyBase(ABC):
             case _:
                 return False, b"10101"
 
-    async def _handler(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
-        try:
-            header_len = (await reader.readexactly(1))[0]
+
+class UnixTCPHandler(ProtocolStrategyBase):
+    async def handler(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
+        while True:
+            uid: int
+            header_len: int
+            try:
+                uid, header_len = request_protocol.unpack(await reader.readexactly(9))
+            except:
+                writer.close()
+                await writer.wait_closed()
+                return
             request = self.request_decoder.decode(await reader.readexactly(header_len))
             match request.header_len:
                 case None:
@@ -87,15 +94,8 @@ class ProtocolStrategyBase(ABC):
                     data = b""
                 case value:
                     data = await reader.readexactly(value)
-
             result, data = await self._gen_response(request=request, data=data)
-
-            writer.write(self.response_protocol.pack(result, len(data)))
+            writer.write(response_protocol.pack(uid, result, len(data)))
             if data:
                 writer.write(data)
             await writer.drain()
-        except:
-            pass
-        writer.write_eof()
-        writer.close()
-        await writer.wait_closed()
