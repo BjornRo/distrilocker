@@ -2,25 +2,32 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 import asyncio
 
-from typing import Literal
+from enum import IntEnum
+from struct import Struct
 from pathlib import Path
 import os
 
 import msgspec
 
-type Methods = Literal[b"size", b"get", b"set", b"update", b"delete"]
+type ReturnResult = tuple[bool, bytes]
+
 DEFAULT_UNIX_SOCK_ADDRESS = "/dev/shm/dlserver.sock"
 
 
-class Request(msgspec.Struct):
-    index: int
-    method: Methods
-    key: str
-    expiry: int
-    header_len: int
+class RequestMethods(IntEnum):
+    SIZE = 0
+    GET = 1
+    SET = 2
+    UPDATE = 3
+    DELETE = 4
 
-    def __post_init__(self):
-        self.key = self.key.lower()
+
+class Request(msgspec.Struct, array_like=True):
+    index: int
+    method: RequestMethods
+    key: str
+    expiry: int | None
+    header_len: int | None
 
 
 async def main():
@@ -41,71 +48,96 @@ async def main():
 
     print(await client.size())
     start = time.time()
-    print(await client.set_expiry("boDod", 17199550145))
+    print(await client.set("boDod", 17199550145, b""))
     print("Elapsed:", time.time() - start)
     print(await client.size())
 
 
 class ClientBase(ABC):
+    def __init__(self, store_id: int):
+        self.store_id = store_id
+
     @abstractmethod
-    async def _call(self, *args, **kwargs): ...
+    async def _call(self, request: Request, data: bytes | None = None): ...
 
     async def size(self):
-        return await self._call("", method=b"size")
+        req = Request(index=self.store_id, method=RequestMethods.SIZE, key="", expiry=0, header_len=None)
+        return await self._call(request=req)
 
-    async def get_expiry(self, key: str):
-        return await self._call(key, method=b"get")
+    async def get(self, key: str):
+        req = Request(index=self.store_id, method=RequestMethods.GET, key=key, expiry=0, header_len=None)
+        return await self._call(request=req)
 
-    async def set_expiry(self, key: str, expiry: int):
-        return await self._call(f"{key}/{expiry}", method=b"set")
+    async def set(self, key: str, expiry: int, data: bytes):
+        req = Request(index=self.store_id, method=RequestMethods.SET, key=key, expiry=expiry, header_len=len(data))
+        return await self._call(request=req, data=data)
 
-    async def update_expiry(self, key: str, expiry: int):
-        return await self._call(f"{key}/{expiry}", method=b"update")
+    async def update(self, key: str, expiry: int, data: bytes | None):
+        """data:None does not update value, expiry"""
+        hl = None if data is None else len(data)
+        req = Request(index=self.store_id, method=RequestMethods.UPDATE, key=key, expiry=expiry, header_len=hl)
+        return await self._call(request=req, data=data)
 
-    async def delete_expiry(self, key: str):
-        return await self._call(key, method=b"delete")
+    async def delete(self, key: str):
+        req = Request(index=self.store_id, method=RequestMethods.DELETE, key=key, expiry=None, header_len=None)
+        return await self._call(request=req)
 
 
-class ClientUnix(ClientBase):
+class ClientUnixTCPBase(ClientBase):
+    response_protocol = Struct(">?H")  # ?: Ok/Err, H: Header_len for data following
+
+    def __init__(self, store_id: int):
+        super().__init__(store_id)
+
+    @abstractmethod
+    async def _connect(self) -> tuple[asyncio.StreamReader, asyncio.StreamWriter]: ...
+
+    async def _call(self, request: Request, data: bytes | None = None) -> ReturnResult:
+        reader, writer = await self._connect()
+        headers = msgspec.msgpack.encode(request)
+        writer.write(len(headers).to_bytes(1))
+        writer.write(headers)
+        await writer.drain()
+        ok: bool
+        header_len: int
+        ok, header_len = self.response_protocol.unpack(await reader.readexactly(3))
+        data = await reader.readexactly(header_len) if header_len else b""
+        writer.write_eof()
+        writer.close()
+        await writer.wait_closed()
+        return ok, data
+
+
+class ClientUnix(ClientUnixTCPBase):
     def __init__(self, store_id: int, path: str):
+        super().__init__(store_id)
         self.filepath = Path(DEFAULT_UNIX_SOCK_ADDRESS) if path == "" else Path(path)
 
         if not os.path.exists(self.filepath):
             raise RuntimeError("DL server is not running")
-        self.store_id = str(store_id).encode()
 
-    async def _call(self, key: str, method: Methods) -> int:
-        reader, writer = await asyncio.open_unix_connection(self.filepath)
-        writer.write(self.store_id + b"/" + method + b"/" + key.encode() + b"\n")
-        await writer.drain()
-        writer.write_eof()
-        header_len = int.from_bytes(await reader.readexactly(2))
-        return int(await reader.readexactly(header_len))
+    async def _connect(self) -> tuple[asyncio.StreamReader, asyncio.StreamWriter]:
+        return await asyncio.open_unix_connection(self.filepath)
 
 
-class ClientTCP(ClientBase):
+class ClientTCP(ClientUnixTCPBase):
     def __init__(self, store_id: int, addr_port: str):
+        super().__init__(store_id)
         self.addr, self.port = addr_port.split(":")
-        self.store_id = str(store_id).encode()
 
-    async def _call(self, key: str, method: Methods) -> int:
-        reader, writer = await asyncio.open_connection(host=self.addr, port=self.port)
-        writer.write(self.store_id + b"/" + method + b"/" + key.encode() + b"\n")
-        await writer.drain()
-        writer.write_eof()
-        header_len = int.from_bytes(await reader.readexactly(2))
-        return int(await reader.readexactly(header_len))
+    async def _connect(self) -> tuple[asyncio.StreamReader, asyncio.StreamWriter]:
+        return await asyncio.open_connection(host=self.addr, port=self.port)
 
 
 class ClientUDP(ClientBase):
     def __init__(self, store_id: int, addr_port: str):
+        super().__init__(store_id)
         self.addr, port = addr_port.split(":")
         self.port = int(port)
-        self.store_id = str(store_id).encode()
         self._queue: asyncio.Queue[bytes] = asyncio.Queue()
 
         class EchoClientProtocol(asyncio.DatagramProtocol):
-            def __init__(self, message: bytes, return_val: list[bytes], on_con_lost):
+            def __init__(self, message: bytes, return_val: list[ReturnResult], on_con_lost):
                 self.message = message
                 self.on_con_lost = on_con_lost
                 self.transport = None
@@ -115,25 +147,28 @@ class ClientUDP(ClientBase):
                 self.transport = transport
                 self.transport.sendto(self.message)
 
-            def datagram_received(self, data, addr):
-                self.return_val.append(data)
-                self.transport.close()  # type:ignore
+            def datagram_received(_self, data: bytes, addr):
+                _self.return_val.append((bool(data[0]), data[1:]))
+                _self.transport.close()  # type:ignore
 
-            def error_received(self, exc):
-                pass
+            def error_received(self, exc): ...
 
             def connection_lost(self, exc):
                 self.on_con_lost.set_result(True)
 
         self.client_prot = EchoClientProtocol
 
-    async def _call(self, key: str, method: Methods) -> int:
+    async def _call(self, request: Request, data: bytes | None = None) -> ReturnResult:
         loop = asyncio.get_running_loop()
         on_con_lost = loop.create_future()
-        return_val: list[bytes] = []
+        headers = msgspec.msgpack.encode(request)
+        message = len(headers).to_bytes(1) + headers
+        if data:
+            message += data
+        return_val: list[ReturnResult] = []
         transport, protocol = await loop.create_datagram_endpoint(
             lambda: self.client_prot(
-                self.store_id + b"/" + method + b"/" + key.encode(),
+                message=message,
                 return_val=return_val,
                 on_con_lost=on_con_lost,
             ),
@@ -143,7 +178,7 @@ class ClientUDP(ClientBase):
             await on_con_lost
         finally:
             transport.close()
-        return int(return_val[0]) if return_val else 0
+        return return_val[0]
 
 
 if __name__ == "__main__":
