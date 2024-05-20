@@ -14,7 +14,8 @@ class Counter(StoreBase):
     async def _task_timer(self, key: str, expiry: int):
         await asyncio.sleep(expiry)
         async with self.lock:
-            del self.store[key]
+            if key in self.store:
+                del self.store[key]
 
     async def get(self, _: Request) -> ReturnResult:
         return False, b"not implemented"
@@ -53,7 +54,10 @@ class Cache(StoreBase):
 
     async def _task_timer(self, key: str, expiry: int):
         await asyncio.sleep(expiry)
-        del self.store[key]
+        try:
+            del self.store[key]
+        except:
+            pass
 
     async def get(self, request: Request) -> ReturnResult:
         if request.key in self.store:
@@ -93,7 +97,8 @@ class LockStore(StoreBase):
     async def _task_timer(self, key: str, expiry: int):
         await asyncio.sleep(expiry)
         async with self.lock:
-            del self.store[key]
+            if key in self.store:
+                del self.store[key]
 
     async def get(self, request: Request) -> ReturnResult:
         async with self.lock:
