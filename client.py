@@ -66,7 +66,7 @@ class ClientBase(ABC):
         req = Request(index=self.store_id, method=RequestMethods.SIZE, key="", expiry=None, header_len=None)
         return await self._call(request=req)
 
-    async def keys(self, start_dotdot_end: str = "3..10"):  # 4.. , ..3=0..3
+    async def keys(self, start_dotdot_end: str = "0..10"):  # 4.. , ..3=0..3
         """start..end"""
         req = Request(
             index=self.store_id,
