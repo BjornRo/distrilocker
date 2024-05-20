@@ -1,7 +1,6 @@
 from __future__ import annotations
 import asyncio
 import os
-import tomllib
 import serverlib.stores as stores
 from collections.abc import Callable
 from pathlib import Path
