@@ -4,6 +4,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from shared import Request, RequestMethods, ReturnResult, response_protocol, request_protocol
 import time
+from itertools import islice
 
 import msgspec
 
@@ -27,11 +28,29 @@ class StoreItem:
 
 
 class StoreBase(ABC):
+    encoder = msgspec.msgpack.Encoder()
+
     def __init__(self):
         self.store: dict[str, StoreItem] = {}
 
     def size(self) -> ReturnResult:
         return True, str(len(self.store)).encode()
+
+    async def keys(self, request: Request) -> ReturnResult:
+        """request.key = 'start..end' start/end: int, exclusive end. start or end can be empty"""
+        match request.key.split(".."):
+            case "", "":
+                return False, b""
+            case start, "":
+                _iter = islice(self.store, int(start), int(start) + 100)
+            case "", end:
+                _iter = islice(self.store, int(end))
+            case start_end:
+                start, end = map(int, start_end)
+                if start >= end:
+                    return False, b""
+                _iter = islice(self.store, int(start), int(end))
+        return True, self.encoder.encode(tuple(_iter))
 
     async def init(self):
         pass
@@ -63,6 +82,8 @@ class ProtocolStrategyBase(ABC):
         match request.method:
             case RequestMethods.SIZE:
                 return store.size()
+            case RequestMethods.KEYS:
+                return await store.keys(request)
             case RequestMethods.GET:
                 return await store.get(request)
             case RequestMethods.SET:

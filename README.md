@@ -5,7 +5,7 @@ Server is simply started by using arguments to the file.
 Either select tcp://address:port or unix/unix://path/my/no, then number of stores.
 python server.py tcp://0.0.0.0:10101 7
 
-METHOD := get | set | update | delete | size
+METHOD := get | set | update | delete | size | keys
 
 To request from the client. The client send: Request as: Len(Request)||Request||Data
 Server responds with: OK/ERR[1byte]||ResultAsBytes

@@ -11,10 +11,11 @@ request_protocol = Struct(">QB")
 
 class RequestMethods(IntEnum):
     SIZE = 0
-    GET = 1
-    SET = 2
-    DELETE = 3
-    UPDATE = 4
+    KEYS = 1
+    GET = 2
+    SET = 3
+    DELETE = 4
+    UPDATE = 5
 
 
 class Request(msgspec.Struct, array_like=True):

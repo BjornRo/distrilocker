@@ -63,11 +63,22 @@ class ClientBase(ABC):
     async def _call(self, request: Request, data: bytes | None = None) -> ReturnResult: ...
 
     async def size(self):
-        req = Request(index=self.store_id, method=RequestMethods.SIZE, key="", expiry=0, header_len=None)
+        req = Request(index=self.store_id, method=RequestMethods.SIZE, key="", expiry=None, header_len=None)
+        return await self._call(request=req)
+
+    async def keys(self, start_dotdot_end: str = "3..10"):  # 4.. , ..3=0..3
+        """start..end"""
+        req = Request(
+            index=self.store_id,
+            method=RequestMethods.KEYS,
+            key=start_dotdot_end,
+            expiry=None,
+            header_len=None,
+        )
         return await self._call(request=req)
 
     async def get(self, key: str):
-        req = Request(index=self.store_id, method=RequestMethods.GET, key=key, expiry=0, header_len=None)
+        req = Request(index=self.store_id, method=RequestMethods.GET, key=key, expiry=None, header_len=None)
         return await self._call(request=req)
 
     async def set(self, key: str, expiry: int, data: bytes | None):
