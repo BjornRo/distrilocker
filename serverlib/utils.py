@@ -115,7 +115,7 @@ class UnixTCPHandler(ProtocolStrategyBase):
                 await writer.wait_closed()
                 return
             request = self.request_decoder.decode(await reader.readexactly(header_len))
-            match request.header_len:
+            match request.data_len:
                 case None:
                     data = None
                 case 0:

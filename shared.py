@@ -9,6 +9,7 @@ DEFAULT_UNIX_SOCK_ADDRESS = "/dev/shm/dlserver.sock"
 response_protocol = Struct(">Q?H")  # Q: int_id, ?: Ok/Err, H: Header_len for data following
 request_protocol = Struct(">QB")
 
+
 class RequestMethods(IntEnum):
     SIZE = 0
     KEYS = 1
@@ -23,7 +24,7 @@ class Request(msgspec.Struct, array_like=True):
     method: RequestMethods
     key: str
     expiry: int | None
-    header_len: int | None
+    data_len: int | None
 
     def __post_init__(self):
         self.key = self.key.lower()

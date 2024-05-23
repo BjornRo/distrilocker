@@ -63,7 +63,7 @@ class ClientBase(ABC):
     async def _call(self, request: Request, data: bytes | None = None) -> ReturnResult: ...
 
     async def size(self):
-        req = Request(index=self.store_id, method=RequestMethods.SIZE, key="", expiry=None, header_len=None)
+        req = Request(index=self.store_id, method=RequestMethods.SIZE, key="", expiry=None, data_len=None)
         return await self._call(request=req)
 
     async def keys(self, start_dotdot_end: str = "0..10"):  # 4.. , ..3=0..3
@@ -73,12 +73,12 @@ class ClientBase(ABC):
             method=RequestMethods.KEYS,
             key=start_dotdot_end,
             expiry=None,
-            header_len=None,
+            data_len=None,
         )
         return await self._call(request=req)
 
     async def get(self, key: str):
-        req = Request(index=self.store_id, method=RequestMethods.GET, key=key, expiry=None, header_len=None)
+        req = Request(index=self.store_id, method=RequestMethods.GET, key=key, expiry=None, data_len=None)
         return await self._call(request=req)
 
     async def set(self, key: str, expiry: int, data: bytes | None):
@@ -87,18 +87,18 @@ class ClientBase(ABC):
             method=RequestMethods.SET,
             key=key,
             expiry=expiry,
-            header_len=len(data) if data else None,
+            data_len=len(data) if data else None,
         )
         return await self._call(request=req, data=data)
 
     async def update(self, key: str, expiry: int, data: bytes | None):
         """data:None does not update value, expiry"""
         hl = None if data is None else len(data)
-        req = Request(index=self.store_id, method=RequestMethods.UPDATE, key=key, expiry=expiry, header_len=hl)
+        req = Request(index=self.store_id, method=RequestMethods.UPDATE, key=key, expiry=expiry, data_len=hl)
         return await self._call(request=req, data=data)
 
     async def delete(self, key: str):
-        req = Request(index=self.store_id, method=RequestMethods.DELETE, key=key, expiry=None, header_len=None)
+        req = Request(index=self.store_id, method=RequestMethods.DELETE, key=key, expiry=None, data_len=None)
         return await self._call(request=req)
 
 
