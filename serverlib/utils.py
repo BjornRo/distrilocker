@@ -35,7 +35,7 @@ class StoreItem:
 
 
 class StoreBase(ABC):
-    encoder = msgspec.msgpack.Encoder()
+    encoder = msgspec.msgpack.Encoder().encode
 
     def __init__(self):
         self.store: dict[str, StoreItem] = {}
@@ -45,19 +45,24 @@ class StoreBase(ABC):
 
     async def keys(self, request: Request) -> ReturnResult:
         """request.key = 'start..end' start/end: int, exclusive end. start or end can be empty"""
-        match request.key.split(".."):
-            case "", "":
-                return False, b""
-            case start, "":
-                _iter = islice(self.store, int(start), int(start) + 100)
-            case "", end:
-                _iter = islice(self.store, int(end))
-            case start_end:
-                start, end = map(int, start_end)
-                if start >= end:
-                    return False, b""
-                _iter = islice(self.store, int(start), int(end))
-        return True, self.encoder.encode(tuple(_iter))
+        res = request.key.split("..")
+        while True:
+            try:  # Iterator might throw if something changed during iteration.
+                match res:
+                    case "", "":
+                        return False, b""
+                    case start, "":
+                        _iter = islice(self.store, int(start), int(start) + 100)
+                    case "", end:
+                        _iter = islice(self.store, int(end))
+                    case start_end:
+                        start, end = map(int, start_end)
+                        if start >= end:
+                            return False, b""
+                        _iter = islice(self.store, int(start), int(end))
+                return True, self.encoder(tuple(_iter))
+            except:
+                pass
 
     async def init(self):
         pass
