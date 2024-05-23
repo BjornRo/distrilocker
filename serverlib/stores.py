@@ -1,7 +1,7 @@
 import asyncio
 import random
 from typing import override
-from .utils import Request, ReturnResult, StoreBase, StoreExpiryItem, StoreItem, now_time
+from .utils import Request, ReturnResult, StoreBase, StoreExpiryItem, StoreItem, StoreLockItem, now_time
 
 
 class Counter(StoreBase):
@@ -9,87 +9,104 @@ class Counter(StoreBase):
 
     def __init__(self):
         super().__init__()
-        self.lock = asyncio.Lock()
+        self.store: dict[str, StoreLockItem]
 
     async def _task_timer(self, key: str, expiry: int):
         await asyncio.sleep(expiry)
-        async with self.lock:
-            if key in self.store:
+        try:
+            async with self.store[key].lock:
                 del self.store[key]
+        except:
+            pass
 
     async def get(self, _: Request) -> ReturnResult:
         return False, b"not implemented"
 
     async def set(self, request: Request, _: bytes | None) -> ReturnResult:
         if (exp := request.expiry) != 0:
-            async with self.lock:
-                if (key := request.key) in self.store:
+            key = request.key
+            data = b"\x01"
+            try:
+                async with self.store[key].lock:
                     if task := self.store[key].task:
                         task.cancel()
                     self.store[key].task = None if exp is None else asyncio.create_task(self._task_timer(key, exp))
-                    if (value := int.from_bytes(self.store[key].data)) < 4294967295:
-                        self.store[key].data = (value + 1).to_bytes(4)
-                else:
-                    task = None if exp is None else asyncio.create_task(self._task_timer(key, exp))
-                    self.store[key] = StoreItem(task=task, data=b"\x01")
-            return True, self.store[key].data
+                    if (value := int.from_bytes(self.store[key].data)) < 4294967294:
+                        data = (value + 1).to_bytes(4)
+                        self.store[key].data = data
+            except:
+                task = None if exp is None else asyncio.create_task(self._task_timer(key, exp))
+                self.store[key] = StoreLockItem(task=task, data=data)
+            return True, data
         return False, b""
 
     async def delete(self, request: Request) -> ReturnResult:
-        async with self.lock:
-            if request.key in self.store:
-                if task := self.store[request.key].task:
+        try:
+            key = request.key
+            async with self.store[key].lock:
+                if task := self.store[key].task:
                     task.cancel()
-                del self.store[request.key]
-                return True, b""
-        return False, b""
+                del self.store[key]
+            return True, b""
+        except:
+            return False, b""
 
     async def update(self, *args, **kwargs):
         return False, b"not implemented"
 
 
-class Cache(StoreBase):
-    """Does not use locks since dict is atomic, corruption is not a worry.
-    If need for locks, then simply just make a new Strategy."""
+class LockCache(StoreBase):
+    def __init__(self):
+        super().__init__()
+        self.store: dict[str, StoreLockItem]
 
     async def _task_timer(self, key: str, expiry: int):
         await asyncio.sleep(expiry)
         try:
-            del self.store[key]
+            async with self.store[key].lock:
+                del self.store[key]
         except:
             pass
 
     async def get(self, request: Request) -> ReturnResult:
-        if request.key in self.store:
+        try:  # No need to lock here
             return True, self.store[request.key].data
-        return False, b""
+        except:
+            return False, b""
 
     async def set(self, request: Request, data: bytes | None) -> ReturnResult:
         if (exp := request.expiry) != 0:
-            if (key := request.key) in self.store:
-                if task := self.store[key].task:
-                    task.cancel()
-                self.store[key].task = None if exp is None else asyncio.create_task(self._task_timer(key, exp))
-                self.store[key].data = data or b""
-            else:
-                task = None if exp is None else asyncio.create_task(self._task_timer(key, exp))
-                self.store[key] = StoreItem(task=task, data=data or b"")
+            key = request.key
+            try:
+                async with self.store[key].lock:
+                    if task := self.store[key].task:
+                        task.cancel()
+                    self.store[key].task = None if exp is None else asyncio.create_task(self._task_timer(key, exp))
+                    self.store[key].data = data or b""
+            except:
+                self.store[key] = StoreLockItem(
+                    task=None if exp is None else asyncio.create_task(self._task_timer(key, exp)),
+                    data=data or b"",
+                )
             return True, b""
         return False, b""
 
     async def delete(self, request: Request) -> ReturnResult:
-        if request.key in self.store:
-            if task := self.store[request.key].task:
-                task.cancel()
-            del self.store[request.key]
-            return True, b""
-        return False, b""
+        key = request.key
+        try:
+            async with self.store[key].lock:
+                if task := self.store[key].task:
+                    task.cancel()
+                del self.store[key]
+                return True, b""
+        except:
+            return False, b""
 
     async def update(self, *args, **kwargs):
         return False, b"not implemented"
 
 
-class LockStore(StoreBase):
+class LockStore(StoreBase):  # slow due to global lock
     def __init__(self):
         super().__init__()
         self.lock = asyncio.Lock()
@@ -97,95 +114,51 @@ class LockStore(StoreBase):
     async def _task_timer(self, key: str, expiry: int):
         await asyncio.sleep(expiry)
         async with self.lock:
-            if key in self.store:
+            try:
                 del self.store[key]
+            except:
+                pass
 
     async def get(self, request: Request) -> ReturnResult:
         async with self.lock:
-            if request.key in self.store:
+            try:
                 return True, self.store[request.key].data
-        return False, b""
+            except:
+                return False, b""
 
     async def set(self, request: Request, data: bytes | None) -> ReturnResult:
         if (exp := request.expiry) != 0:
             async with self.lock:
-                if (key := request.key) not in self.store:
-                    task = None if exp is None else asyncio.create_task(self._task_timer(key, exp))
-                    self.store[key] = StoreItem(task=task, data=data or b"")
+                key = request.key
+                if key not in self.store:
+                    self.store[key] = StoreItem(
+                        task=None if exp is None else asyncio.create_task(self._task_timer(key, exp)),
+                        data=data or b"",
+                    )
                     return True, b""
         return False, b""
 
     async def update(self, request: Request, data: bytes | None) -> ReturnResult:
-        async with self.lock:
-            if (key := request.key) in self.store:
+        try:
+            async with self.lock:
+                key = request.key
                 if (exp := request.expiry) != 0:
                     if task := self.store[key].task:
                         task.cancel()
                     self.store[key].task = None if exp is None else asyncio.create_task(self._task_timer(key, exp))
 
                 if data is not None:
-                    self.store[request.key].data = data
-                return True, b""
-        return False, b""
+                    self.store[key].data = data
+            return True, b""
+        except:
+            return False, b""
 
     async def delete(self, request: Request) -> ReturnResult:
-        async with self.lock:
-            if request.key in self.store:
+        try:
+            async with self.lock:
                 if task := self.store[request.key].task:
                     task.cancel()
                 del self.store[request.key]
-                return True, b""
-        return False, b""
-
-
-class LockStorePeriodicClean(StoreBase):
-    def __init__(self, periodic_cleaning_interval_sec: int):
-        self.store: dict[str, StoreExpiryItem] = {}
-        self.lock = asyncio.Lock()
-        self.interval = periodic_cleaning_interval_sec
-
-    @override
-    async def init(self):
-        async def periodic_clean(interval_time: int):
-            while True:
-                await asyncio.sleep(interval_time)
-                async with self.lock:
-                    if store_len := len(self.store):
-                        for key, item in random.sample(tuple(self.store.items()), k=min(4, store_len)):
-                            if item.expiry and now_time() > item.expiry:
-                                del self.store[key]
-
-        self._background_task = asyncio.create_task(periodic_clean(self.interval))
-
-    async def get(self, request: Request) -> ReturnResult:
-        async with self.lock:
-            if request.key in self.store:
-                if (exp := self.store[request.key].expiry) is None or now_time() <= exp:
-                    return True, self.store[request.key].data
-                del self.store[request.key]
-        return False, b""
-
-    async def set(self, request: Request, data: bytes | None) -> ReturnResult:
-        if request.expiry != 0:
-            async with self.lock:
-                if request.key not in self.store:
-                    exp = None if request.expiry is None else now_time() + request.expiry
-                    self.store[request.key] = StoreExpiryItem(expiry=exp, data=data or b"")
-                    return True, b""
-        return False, b""
-
-    async def delete(self, request: Request) -> ReturnResult:
-        async with self.lock:
-            if request.key in self.store:
-                del self.store[request.key]
-                return True, b""
-        return False, b""
-
-    async def update(self, request: Request, data: bytes | None) -> ReturnResult:
-        async with self.lock:
-            if request.key in self.store:
-                self.store[request.key].expiry = None if request.expiry is None else now_time() + request.expiry
-                if data is not None:
-                    self.store[request.key].data = data
-                return True, b""
-        return False, b""
+            return True, b""
+        except:
+            return False, b""

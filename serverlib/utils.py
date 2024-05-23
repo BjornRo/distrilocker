@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 import asyncio
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from shared import Request, RequestMethods, ReturnResult, response_protocol, request_protocol
 import time
 from itertools import islice
@@ -13,6 +13,13 @@ type Address = tuple[str, int | str]
 
 def now_time():
     return int(time.time())
+
+
+@dataclass(slots=True)
+class StoreLockItem:
+    task: asyncio.Task | None
+    data: bytes
+    lock: asyncio.Lock = field(default_factory=asyncio.Lock)
 
 
 @dataclass(slots=True)
