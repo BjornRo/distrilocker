@@ -5,7 +5,8 @@ import os
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import override
+import secrets
+from typing import cast, override
 
 import msgspec
 
@@ -14,7 +15,6 @@ from shared import (
     Request,
     RequestMethods,
     ReturnResult,
-    request_protocol,
     response_protocol,
 )
 
@@ -50,6 +50,8 @@ async def main():
 
 
 class ClientBase(ABC):
+    encoder = msgspec.msgpack.Encoder().encode
+
     def __init__(self, store_id: int):
         self.store_id = store_id
 
@@ -112,7 +114,7 @@ class CallbackItem:
 class ClientUnixTCPBase(ClientBase):
     def __init__(self, store_id: int):
         super().__init__(store_id)
-        self.to_send: asyncio.Queue[CallbackItem] = asyncio.Queue()
+        self.callback_queue: asyncio.Queue[CallbackItem] = asyncio.Queue()
 
     @override
     async def init(self):
@@ -125,39 +127,35 @@ class ClientUnixTCPBase(ClientBase):
         await self.writer.wait_closed()
 
     async def connection_multiplexer(self):
-        to_return: dict[int, asyncio.Queue[ReturnResult]] = {}
+        waiting_callback: dict[bytes, asyncio.Queue[ReturnResult]] = {}
 
         async def reader():
-            try:
-                while True:
-                    uid: int
-                    ok: bool
-                    header_len: int
-                    uid, ok, header_len = response_protocol.unpack(await self.reader.readexactly(11))
-                    data = await self.reader.readexactly(header_len) if header_len else b""
-                    await to_return[uid].put((ok, data))
-                    del to_return[uid]
-            except:
-                pass
+            while True:
+                resp = await self.reader.readexactly(11)
+                request_id = resp[:8]
+                ok, header_len = cast(tuple[bool, int], response_protocol.unpack(resp[8:]))
+                data = await self.reader.readexactly(header_len) if header_len else b""
+                await waiting_callback[request_id].put((ok, data))
+                del waiting_callback[request_id]  # Strong-ref @ _call(..) -> ok to delete.
 
         reader_task = asyncio.create_task(reader())
         while True:
-            item = await self.to_send.get()
-            headers = msgspec.msgpack.encode(item.request)
-            uid = id(item)
-            self.writer.write(request_protocol.pack(uid, len(headers)))
+            item = await self.callback_queue.get()
+            headers = self.encoder(item.request)
+            request_id = secrets.token_bytes(8)
+            self.writer.write(request_id + len(headers).to_bytes())
             self.writer.write(headers)
             if item.data:
                 self.writer.write(item.data)
             await self.writer.drain()
-            to_return[uid] = item.channel
+            waiting_callback[request_id] = item.channel
 
     @abstractmethod
     async def _connect(self) -> tuple[asyncio.StreamReader, asyncio.StreamWriter]: ...
 
     async def _call(self, request: Request, data: bytes | None = None) -> ReturnResult:
         cb = CallbackItem(request=request, data=data)
-        await self.to_send.put(cb)
+        await self.callback_queue.put(cb)
         return await cb.channel.get()
 
 
@@ -214,7 +212,7 @@ class ClientUDP(ClientBase):
     async def _call(self, request: Request, data: bytes | None = None) -> ReturnResult:
         loop = asyncio.get_running_loop()
         on_con_lost = loop.create_future()
-        headers = msgspec.msgpack.encode(request)
+        headers = self.encoder(request)
         message = len(headers).to_bytes(1) + headers
         if data:
             message += data

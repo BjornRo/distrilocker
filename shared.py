@@ -6,8 +6,7 @@ type ReturnResult = tuple[bool, bytes]
 
 DEFAULT_UNIX_SOCK_ADDRESS = "/dev/shm/dlserver.sock"
 
-response_protocol = Struct(">Q?H")  # Q: int_id, ?: Ok/Err, H: Header_len for data following
-request_protocol = Struct(">QB")
+response_protocol = Struct(">?H")  # Q: int_id, ?: Ok/Err, H: Header_len for data following
 
 
 class RequestMethods(IntEnum):

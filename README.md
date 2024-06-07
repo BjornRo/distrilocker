@@ -11,7 +11,7 @@ To request from the client. The client send: Request as: Len(Request)||Request||
 Server responds with: OK/ERR[1byte]||ResultAsBytes
 
 The server handles all requests using a dict and each store has their own dict and lock. The server multiplexes
-using the STORE_ID given by the client. 
+using the REQUEST ID given by the client. 
 
 Using periodic: Each store also have a cleaning task that selects some random keys and checks the expiry, if it is expired, delete.
 Otherwise, task deletes itself. I dont know which version is the best...

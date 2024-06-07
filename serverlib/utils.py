@@ -2,7 +2,7 @@ from abc import ABC, abstractmethod
 import asyncio
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from shared import Request, RequestMethods, ReturnResult, response_protocol, request_protocol
+from shared import Request, RequestMethods, ReturnResult, response_protocol
 from itertools import islice
 
 import msgspec
@@ -75,7 +75,7 @@ class StoreBase[T](ABC):
 
 
 class ProtocolStrategyBase(ABC):
-    request_decoder = msgspec.msgpack.Decoder(Request)
+    request_decoder = msgspec.msgpack.Decoder(Request).decode
 
     def __init__(self, num_stores: int, store_type: Callable[[], StoreBase]):
         if num_stores <= 0:
@@ -106,15 +106,14 @@ class ProtocolStrategyBase(ABC):
 class UnixTCPHandler(ProtocolStrategyBase):
     async def handler(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
         while True:
-            uid: int
-            header_len: int
             try:
-                uid, header_len = request_protocol.unpack(await reader.readexactly(9))
+                request = await reader.readexactly(9)
+                request_id, header_len = request[:8], request[-1]
             except:
                 writer.close()
                 await writer.wait_closed()
                 return
-            request = self.request_decoder.decode(await reader.readexactly(header_len))
+            request = self.request_decoder(await reader.readexactly(header_len))
             match request.data_len:
                 case None:
                     data = None
@@ -123,7 +122,7 @@ class UnixTCPHandler(ProtocolStrategyBase):
                 case value:
                     data = await reader.readexactly(value)
             result, data = await self._gen_response(request=request, data=data)
-            writer.write(response_protocol.pack(uid, result, len(data)))
+            writer.write(response_protocol.pack(request_id, result, len(data)))
             if data:
                 writer.write(data)
             await writer.drain()
