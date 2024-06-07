@@ -1,16 +1,8 @@
 import asyncio
-import random
-from typing import override
-from .utils import Request, ReturnResult, StoreBase, StoreExpiryItem, StoreItem, StoreLockItem, now_time
+from .utils import Request, ReturnResult, StoreBase, StoreItem, StoreLockItem
 
 
-class Counter(StoreBase):
-    """Set increases, Delete deletes"""
-
-    def __init__(self):
-        super().__init__()
-        self.store: dict[str, StoreLockItem]
-
+class _StoreTaskTimer(StoreBase[StoreLockItem]):
     async def _task_timer(self, key: str, expiry: int):
         await asyncio.sleep(expiry)
         try:
@@ -18,6 +10,10 @@ class Counter(StoreBase):
                 del self.store[key]
         except:
             pass
+
+
+class Counter(_StoreTaskTimer):
+    """Set increases, Delete deletes"""
 
     async def get(self, _: Request) -> ReturnResult:
         return False, b"not implemented"
@@ -55,19 +51,7 @@ class Counter(StoreBase):
         return False, b"not implemented"
 
 
-class LockCache(StoreBase):
-    def __init__(self):
-        super().__init__()
-        self.store: dict[str, StoreLockItem]
-
-    async def _task_timer(self, key: str, expiry: int):
-        await asyncio.sleep(expiry)
-        try:
-            async with self.store[key].lock:
-                del self.store[key]
-        except:
-            pass
-
+class LockCache(_StoreTaskTimer):
     async def get(self, request: Request) -> ReturnResult:
         try:  # No need to lock here
             return True, self.store[request.key].data
@@ -106,7 +90,7 @@ class LockCache(StoreBase):
         return False, b"not implemented"
 
 
-class LockStore(StoreBase):  # slow due to global lock
+class LockStore(StoreBase[StoreItem]):  # slow due to global lock
     def __init__(self):
         super().__init__()
         self.lock = asyncio.Lock()

@@ -3,16 +3,11 @@ import asyncio
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from shared import Request, RequestMethods, ReturnResult, response_protocol, request_protocol
-import time
 from itertools import islice
 
 import msgspec
 
 type Address = tuple[str, int | str]
-
-
-def now_time():
-    return int(time.time())
 
 
 @dataclass(slots=True)
@@ -34,11 +29,11 @@ class StoreItem:
     data: bytes
 
 
-class StoreBase(ABC):
+class StoreBase[T](ABC):
     encoder = msgspec.msgpack.Encoder().encode
 
     def __init__(self):
-        self.store: dict[str, StoreItem] = {}
+        self.store: dict[str, T] = {}
 
     def size(self) -> ReturnResult:
         return True, str(len(self.store)).encode()

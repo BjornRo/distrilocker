@@ -19,7 +19,7 @@ class RequestMethods(IntEnum):
     UPDATE = 5
 
 
-class Request(msgspec.Struct, array_like=True):
+class Request(msgspec.Struct):
     index: int
     method: RequestMethods
     key: str
