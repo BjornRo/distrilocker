@@ -51,6 +51,7 @@ async def main():
 
 class ClientBase(ABC):
     encoder = msgspec.msgpack.Encoder().encode
+    keys_decoder = msgspec.msgpack.Decoder(list[str]).decode
 
     def __init__(self, store_id: int):
         self.store_id = store_id
@@ -68,7 +69,7 @@ class ClientBase(ABC):
         req = Request(index=self.store_id, method=RequestMethods.SIZE, key="", expiry=None, data_len=None)
         return await self._call(request=req)
 
-    async def keys(self, start_dotdot_end: str = "0..10"):  # 4.. , ..3=0..3
+    async def keys(self, start_dotdot_end: str = "0..10") -> list[str]:  # 4.. , ..3=0..3
         """start..end"""
         req = Request(
             index=self.store_id,
@@ -77,7 +78,10 @@ class ClientBase(ABC):
             expiry=None,
             data_len=None,
         )
-        return await self._call(request=req)
+        ok, data = await self._call(request=req)
+        if ok:
+            return self.keys_decoder(data)
+        return []
 
     async def get(self, key: str):
         req = Request(index=self.store_id, method=RequestMethods.GET, key=key, expiry=None, data_len=None)
