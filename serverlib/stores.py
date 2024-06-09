@@ -3,6 +3,8 @@ from .utils import Request, ReturnResult, StoreBase, StoreItem, StoreLockItem
 
 
 class _StoreTaskTimer(StoreBase[StoreLockItem]):
+    __slots__ = ()
+
     async def _task_timer(self, key: str, expiry: int):
         await asyncio.sleep(expiry)
         try:
@@ -13,6 +15,7 @@ class _StoreTaskTimer(StoreBase[StoreLockItem]):
 
 
 class Counter(_StoreTaskTimer):
+    __slots__ = ()
     """Set increases, Delete deletes"""
 
     async def get(self, _: Request) -> ReturnResult:
@@ -52,6 +55,8 @@ class Counter(_StoreTaskTimer):
 
 
 class LockCache(_StoreTaskTimer):
+    __slots__ = ()
+
     async def get(self, request: Request) -> ReturnResult:
         try:  # No need to lock here
             return True, self.store[request.key].data
@@ -91,6 +96,8 @@ class LockCache(_StoreTaskTimer):
 
 
 class LockStore(StoreBase[StoreItem]):  # slow due to global lock
+    __slots__ = "lock"
+
     def __init__(self):
         super().__init__()
         self.lock = asyncio.Lock()

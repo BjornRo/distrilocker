@@ -30,6 +30,7 @@ class StoreItem:
 
 
 class StoreBase[T](ABC):
+    __slots__ = "store"
     encoder = msgspec.msgpack.Encoder().encode
 
     def __init__(self):
@@ -75,17 +76,18 @@ class StoreBase[T](ABC):
 
 
 class ProtocolStrategyBase(ABC):
+    __slots__ = "store"
     request_decoder = msgspec.msgpack.Decoder(Request).decode
 
     def __init__(self, num_stores: int, store_type: Callable[[], StoreBase]):
         if num_stores <= 0:
             raise ValueError("More locks than 0")
-        self._store: tuple[StoreBase, ...] = tuple(store_type() for _ in range(num_stores))
+        self.store: tuple[StoreBase, ...] = tuple(store_type() for _ in range(num_stores))
 
     @abstractmethod
     async def run(self) -> None: ...
     async def _gen_response(self, request: Request, data: bytes | None) -> ReturnResult:
-        store = self._store[request.index]
+        store = self.store[request.index]
         match request.method:
             case RequestMethods.SIZE:
                 return store.size()
@@ -104,6 +106,8 @@ class ProtocolStrategyBase(ABC):
 
 
 class UnixTCPHandler(ProtocolStrategyBase):
+    __slots__ = ()
+
     async def handler(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
         while True:
             try:

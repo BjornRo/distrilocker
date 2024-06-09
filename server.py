@@ -36,6 +36,8 @@ async def main():
 
 
 class ProtocolUNIX(UnixTCPHandler):
+    __slots__ = "filepath"
+
     def __init__(self, num_stores: int, filepath: str, store_type: Callable[[], StoreBase]):
         """path/to/me or just_me"""
         super().__init__(num_stores=num_stores, store_type=store_type)
@@ -53,7 +55,7 @@ class ProtocolUNIX(UnixTCPHandler):
         try:
             server = await asyncio.start_unix_server(self.handler, path=self.filepath)
             async with server:
-                for i in self._store:
+                for i in self.store:
                     await i.init()
                 await server.serve_forever()
         except:
@@ -65,6 +67,8 @@ class ProtocolUNIX(UnixTCPHandler):
 
 
 class ProtocolTCP(UnixTCPHandler):
+    __slots__ = "address", "port"
+
     def __init__(self, num_stores: int, address_port: str, store_type: Callable[[], StoreBase]):
         """Ex: address_port = '0.0.0.0:1337'"""
         super().__init__(num_stores=num_stores, store_type=store_type)
@@ -73,24 +77,26 @@ class ProtocolTCP(UnixTCPHandler):
     async def run(self):
         server = await asyncio.start_server(self.handler, host=self.address, port=self.port)
         async with server:
-            for i in self._store:
+            for i in self.store:
                 await i.init()
             await server.serve_forever()
 
 
 class ProtocolUDP(ProtocolStrategyBase):
+    __slots__ = "address", "port", "queue", "background_task"
+
     def __init__(self, num_stores: int, address_port: str, store_type: Callable[[], StoreBase]):
         """Ex: address_port = '0.0.0.0:1337'"""
         super().__init__(num_stores=num_stores, store_type=store_type)
         self.address, port = address_port.lower().split(":")
         self.port = int(port)
-        self._queue: asyncio.Queue[tuple[Address, Request, bytes]] = asyncio.Queue()
+        self.queue: asyncio.Queue[tuple[Address, Request, bytes]] = asyncio.Queue()
 
     async def run(self):
         async def message_handler_task():
             while True:
                 try:
-                    addr, request, data = await self._queue.get()
+                    addr, request, data = await self.queue.get()
                     result, data = await self._gen_response(request=request, data=data)
                     transport.sendto((b"\x01" if result else b"\x00") + data, addr)
                 except asyncio.CancelledError:
@@ -98,25 +104,25 @@ class ProtocolUDP(ProtocolStrategyBase):
                 except:
                     pass
 
-        class EchoServerProtocol(asyncio.DatagramProtocol):
+        class ServerProtocol(asyncio.DatagramProtocol):
             def connection_made(_self, transport):
                 _self.transport = transport
 
             def datagram_received(_self, data: bytes, addr: Address):
                 request = self.request_decoder.decode(data[1 : data[0] + 1])
-                self._queue.put_nowait((addr, request, data[data[0] + 1 :]))
+                self.queue.put_nowait((addr, request, data[data[0] + 1 :]))
 
         transport, protocol = await asyncio.get_running_loop().create_datagram_endpoint(
-            lambda: EchoServerProtocol(), local_addr=(self.address, self.port)
+            lambda: ServerProtocol(), local_addr=(self.address, self.port)
         )
-        for i in self._store:
+        for i in self.store:
             await i.init()
-        self._background_task = asyncio.create_task(message_handler_task())
+        self.background_task = asyncio.create_task(message_handler_task())
         try:
             await asyncio.Future()
         except:
             pass
-        self._background_task.cancel()
+        self.background_task.cancel()
         transport.close()
 
 
