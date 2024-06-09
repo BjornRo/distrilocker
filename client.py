@@ -152,8 +152,8 @@ class ClientUnixTCPBase(ClientBase):
             self.writer.write(item.headers)
             if item.data:
                 self.writer.write(item.data)
-            await self.writer.drain()
             waiting_callback[request_id] = item.channel
+            await self.writer.drain()
 
     @abstractmethod
     async def _connect(self) -> tuple[asyncio.StreamReader, asyncio.StreamWriter]: ...
@@ -163,11 +163,11 @@ class ClientUnixTCPBase(ClientBase):
         await self.callback_queue.put(cb)
         return await cb.channel.get()
 
-    async def _raw_call(self, data: bytes) -> ReturnResult:
-        header_len = data[8]
-        cb = CallbackItem(headers=data[9 : 9 + header_len], data=data[9 + header_len :])
+    async def _raw_call(self, headers: bytes, data: bytes) -> bytes:
+        cb = CallbackItem(headers=headers, data=data)
         await self.callback_queue.put(cb)
-        return await cb.channel.get()
+        ok, data = await cb.channel.get()
+        return ok.to_bytes() + data
 
 
 class ClientUnix(ClientUnixTCPBase):
