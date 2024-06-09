@@ -27,7 +27,7 @@ async def main():
     store_id = int(sys.argv[2])
 
     if protocol == "unix":
-        client = ClientUnix(store_id, addr_path[0] if addr_path else "")
+        client = ClientUnix(store_id, path=addr_path[0] if addr_path else "")
     elif protocol == "tcp":
         client = ClientTCP(store_id, addr_port=addr_path[0])
     elif protocol == "udp":
@@ -110,12 +110,14 @@ class ClientBase(ABC):
 
 @dataclass
 class CallbackItem:
-    request: Request
+    headers: bytes
     data: bytes | None
     channel: asyncio.Queue[ReturnResult] = field(default_factory=lambda: asyncio.Queue(1))
 
 
 class ClientUnixTCPBase(ClientBase):
+    __slots__ = ("callback_queue", "reader", "writer", "background_task")
+
     def __init__(self, store_id: int):
         super().__init__(store_id)
         self.callback_queue: asyncio.Queue[CallbackItem] = asyncio.Queue()
@@ -143,12 +145,11 @@ class ClientUnixTCPBase(ClientBase):
                 del waiting_callback[request_id]  # Strong-ref @ _call(..) -> ok to delete.
 
         reader_task = asyncio.create_task(reader())
-        while True:
+        while True:  # writer()
             item = await self.callback_queue.get()
-            headers = self.encoder(item.request)
             request_id = secrets.token_bytes(8)
-            self.writer.write(request_id + len(headers).to_bytes())
-            self.writer.write(headers)
+            self.writer.write(request_id + len(item.headers).to_bytes())
+            self.writer.write(item.headers)
             if item.data:
                 self.writer.write(item.data)
             await self.writer.drain()
@@ -158,7 +159,13 @@ class ClientUnixTCPBase(ClientBase):
     async def _connect(self) -> tuple[asyncio.StreamReader, asyncio.StreamWriter]: ...
 
     async def _call(self, request: Request, data: bytes | None = None) -> ReturnResult:
-        cb = CallbackItem(request=request, data=data)
+        cb = CallbackItem(headers=self.encoder(request), data=data)
+        await self.callback_queue.put(cb)
+        return await cb.channel.get()
+
+    async def _raw_call(self, data: bytes) -> ReturnResult:
+        header_len = data[8]
+        cb = CallbackItem(headers=data[9 : 9 + header_len], data=data[9 + header_len :])
         await self.callback_queue.put(cb)
         return await cb.channel.get()
 
