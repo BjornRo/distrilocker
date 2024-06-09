@@ -69,12 +69,12 @@ class ClientBase(ABC):
         req = Request(index=self.store_id, method=RequestMethods.SIZE, key="", expiry=None, data_len=None)
         return await self._call(request=req)
 
-    async def keys(self, start_dotdot_end: str = "0..10") -> list[str]:  # 4.. , ..3=0..3
-        """start..end"""
+    async def keys(self, key: str = "0..10") -> list[str]:  # 4.. , ..3=0..3
+        """start..end | One value can be omitted"""
         req = Request(
             index=self.store_id,
             method=RequestMethods.KEYS,
-            key=start_dotdot_end,
+            key=key,
             expiry=None,
             data_len=None,
         )
@@ -162,12 +162,6 @@ class ClientUnixTCPBase(ClientBase):
         cb = CallbackItem(headers=self.encoder(request), data=data)
         await self.callback_queue.put(cb)
         return await cb.channel.get()
-
-    async def _raw_call(self, headers: bytes, data: bytes) -> bytes:
-        cb = CallbackItem(headers=headers, data=data)
-        await self.callback_queue.put(cb)
-        ok, data = await cb.channel.get()
-        return ok.to_bytes() + data
 
 
 class ClientUnix(ClientUnixTCPBase):
